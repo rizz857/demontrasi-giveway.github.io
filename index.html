@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Kuis / Giveaway</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+*{box-sizing:border-box;font-family:Segoe UI;margin:0}
+body{
+  background:#020617;
+  color:#e5e7eb;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+.panel{
+  width:100%;
+  max-width:420px;
+  background:rgba(15,23,42,.7);
+  padding:20px;
+  border-radius:14px;
+}
+input,textarea,button{
+  width:100%;
+  padding:10px;
+  margin-top:10px;
+  border-radius:10px;
+  border:none;
+}
+input,textarea{
+  background:#020617;
+  color:#fff;
+  border:1px solid #334155;
+}
+button{
+  background:#7c3aed;
+  color:#fff;
+  font-weight:600;
+  cursor:pointer;
+}
+.hide{display:none}
+small{opacity:.7}
+hr{margin:10px 0;border-color:#334155}
+</style>
+</head>
+
+<body>
+
+<!-- HOME -->
+<div id="home" class="panel">
+<h2 style="width:310px;height:60px;display:grid;place-items:center;">Klik Join Kuis
+</h2>
+  <button onclick="show('adminLogin')">Login Admin</button>
+  <button onclick="show('userLogin')">IJoin Kuis</button>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div id="adminLogin" class="panel hide">
+  <h3>Admin Login</h3>
+  <input id="adminPass" type="password" placeholder="Password Admin">
+  <button onclick="loginAdmin()">Login</button>
+  <button onclick="back()">Kembali</button>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adminPanel" class="panel hide">
+  <h3>Dashboard Admin</h3>
+
+  <textarea id="qText" placeholder="Pertanyaan"></textarea>
+  <input id="qAnswer" placeholder="Jawaban benar">
+  <input id="qTime" type="number" placeholder="Waktu (detik)">
+  <button onclick="addQuestion()">Tambah Soal</button>
+
+  <hr>
+  <button id="quizToggleBtn" onclick="toggleQuiz()"></button>
+  <button onclick="resetAll()">RESET SEMUA DATA</button>
+
+  <hr>
+  <h4>📋 Peserta</h4>
+  <div id="userList"></div>
+
+  <button onclick="logout()">Logout</button>
+</div>
+
+<!-- USER LOGIN -->
+<div id="userLogin" class="panel hide">
+  <h3>Ikuti Kuis</h3>
+  <input id="nameInput" placeholder="Nama">
+  <input id="waInput" placeholder="WhatsApp (08xxx/62xxx)">
+  <button onclick="startQuiz()">Mulai Kuis</button>
+  <button onclick="back()">Kembali</button>
+</div>
+
+<!-- QUIZ -->
+<div id="quiz" class="panel hide">
+  <h4 id="question"></h4>
+  <small>⏱ Waktu: <span id="time">0</span> detik</small>
+  <input id="answerInput" placeholder="Jawaban kamu">
+  <button onclick="submitAnswer()">Kirim</button>
+</div>
+
+<!-- RESULT -->
+<div id="result" class="panel hide">
+  <h3>🎉 Kuis Selesai</h3>
+  <p id="resultText"></p>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<script>
+/* ================= CONFIG ================= */
+const ADMIN_PASSWORD = "memekl";
+
+/* ================= STORAGE ================= */
+const QUIZ_KEY="quiz_data";
+const RESULT_KEY="quiz_results";
+const STATUS_KEY="quiz_status";
+const DONE_KEY="quiz_done";
+
+/* ================= STATE ================= */
+let quiz = JSON.parse(localStorage.getItem(QUIZ_KEY)) || [];
+let results = JSON.parse(localStorage.getItem(RESULT_KEY)) || [];
+let quizStatus = JSON.parse(localStorage.getItem(STATUS_KEY)) || {open:true};
+
+let index=0;
+let score=0;
+let totalTime=0;
+let interval=null;
+let user=null;
+
+/* ================= ELEMENT ================= */
+const questionEl=document.getElementById("question");
+const timeEl=document.getElementById("time");
+const answerInput=document.getElementById("answerInput");
+const nameInput=document.getElementById("nameInput");
+const waInput=document.getElementById("waInput");
+
+/* ================= UI ================= */
+function show(id){
+  document.querySelectorAll(".panel").forEach(p=>p.classList.add("hide"));
+  document.getElementById(id).classList.remove("hide");
+}
+function back(){show("home")}
+function logout(){
+  localStorage.removeItem(DONE_KEY);
+  show("home");
+}
+
+/* ================= ADMIN ================= */
+function loginAdmin(){
+  if(adminPass.value!==ADMIN_PASSWORD) return alert("Password salah");
+  show("adminPanel");
+  updateQuizStatusUI();
+  renderUsers();
+}
+
+function addQuestion(){
+  if(!qText.value || !qAnswer.value || !qTime.value)
+    return alert("Lengkapi soal");
+
+  quiz.push({
+    q: qText.value,
+    a: qAnswer.value.toLowerCase().trim(),
+    t: Number(qTime.value)   // <<< FIX TIMER
+  });
+
+  localStorage.setItem(QUIZ_KEY, JSON.stringify(quiz));
+  qText.value=qAnswer.value=qTime.value="";
+  alert("Soal ditambahkan");
+}
+
+function toggleQuiz(){
+  quizStatus.open=!quizStatus.open;
+  localStorage.setItem(STATUS_KEY,JSON.stringify(quizStatus));
+  updateQuizStatusUI();
+}
+
+function updateQuizStatusUI(){
+  quizToggleBtn.textContent = quizStatus.open ? "TUTUP KUIS" : "BUKA KUIS";
+}
+
+function resetAll(){
+  if(!confirm("Reset semua data?"))return;
+  localStorage.clear();
+  location.reload();
+}
+
+function renderUsers(){
+  userList.innerHTML="";
+  results
+    .sort((a,b)=>b.score-a.score || a.totalTime-b.totalTime)
+    .forEach((r,i)=>{
+      userList.innerHTML+=
+        `<p>${i+1}. ${r.name} | ${r.wa} | Skor:${r.score} | ${r.totalTime}s</p>`;
+    });
+}
+
+/* ================= VALIDASI WA ================= */
+function normalizeWA(v){
+  let w=v.replace(/\D/g,"");
+  if(w.startsWith("0")) w="62"+w.slice(1);
+  return /^62\d{9,13}$/.test(w)?w:null;
+}
+
+/* ================= USER ================= */
+function startQuiz(){
+  if(!quizStatus.open) return alert("Kuis ditutup");
+  if(localStorage.getItem(DONE_KEY)) return alert("Kamu sudah ikut");
+  if(!quiz.length) return alert("Belum ada soal");
+
+  const n=nameInput.value.trim();
+  const w=normalizeWA(waInput.value.trim());
+
+  if(!n) return alert("Nama wajib diisi");
+  if(!w) return alert("WhatsApp tidak valid");
+  if(results.some(r=>r.wa===w)) return alert("Nomor sudah digunakan");
+
+  user={name:n,wa:w};
+  index=0;
+  score=0;
+  totalTime=0;
+
+  show("quiz");
+  loadQuestion();
+}
+
+/* ================= TIMER FIX ================= */
+function loadQuestion(){
+  clearInterval(interval);
+
+  if(index>=quiz.length){
+    finishQuiz();
+    return;
+  }
+
+  const q=quiz[index];
+  let t=q.t;
+
+  questionEl.textContent=q.q;
+  answerInput.value="";
+  timeEl.textContent=t;
+
+  interval=setInterval(()=>{
+    t--;
+    timeEl.textContent=t;
+    totalTime++;
+
+    if(t<=0){
+      clearInterval(interval);
+      submitAnswer();
+    }
+  },1000);
+}
+
+function submitAnswer(){
+  clearInterval(interval);
+
+  const userAns=answerInput.value.toLowerCase().trim();
+  if(userAns===quiz[index].a) score++;
+
+  index++;
+  loadQuestion();
+}
+
+function finishQuiz(){
+  localStorage.setItem(DONE_KEY,"1");
+  results.push({...user,score,totalTime});
+  localStorage.setItem(RESULT_KEY,JSON.stringify(results));
+  resultText.textContent=
+    `Skor: ${score}/${quiz.length} | Waktu: ${totalTime} detik`;
+  show("result");
+}
+</script>
+
+</body>
+</html>
